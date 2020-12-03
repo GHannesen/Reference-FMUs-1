@@ -15,44 +15,62 @@
 
 #if FMI_VERSION == 1
 
-#define not_modelError (modelInstantiated|modelInitialized|modelTerminated)
+#define not_modelError (Instantiated| Initialized | Terminated)
 
 typedef enum {
-    modelInstantiated = 1<<0,
-    modelInitialized  = 1<<1,
-    modelTerminated   = 1<<2,
-    modelError        = 1<<3
+    Instantiated = 1<<0,
+    Initialized  = 1<<1,
+    Terminated   = 1<<2,
+    modelError   = 1<<3
+} ModelState;
+
+#elif FMI_VERSION == 2
+
+typedef enum {
+    StartAndEnd        = 1<<0,
+    Instantiated       = 1<<1,
+    InitializationMode = 1<<2,
+
+    // ME states
+    EventMode          = 1<<3,
+    ContinuousTimeMode = 1<<4,
+
+    // CS states
+    StepComplete       = 1<<5,
+    StepInProgress     = 1<<6,
+    StepFailed         = 1<<7,
+    StepCanceled       = 1<<8,
+
+    Terminated         = 1<<9,
+    modelError         = 1<<10,
+    modelFatal         = 1<<11,
 } ModelState;
 
 #else
 
 typedef enum {
-    modelStartAndEnd        = 1<<0,
-    modelInstantiated       = 1<<1,
-    modelInitializationMode = 1<<2,
-
-    // ME states
-    modelEventMode          = 1<<3,
-    modelContinuousTimeMode = 1<<4,
-    
-    // CS states
-    modelStepComplete       = 1<<5,
-    modelStepInProgress     = 1<<6,
-    modelStepFailed         = 1<<7,
-    modelStepCanceled       = 1<<8,
-
-    modelTerminated         = 1<<9,
-    modelError              = 1<<10,
-    modelFatal              = 1<<11,
+    StartAndEnd            = 1 << 0,
+    ConfigurationMode      = 1 << 1,
+    Instantiated           = 1 << 2,
+    InitializationMode     = 1 << 3,
+    EventMode              = 1 << 4,
+    ContinuousTimeMode     = 1 << 5,
+    StepMode               = 1 << 6,
+    ClockActivationMode    = 1 << 7,
+    StepDiscarded          = 1 << 8,
+    ReconfigurationMode    = 1 << 9,
+    IntermediateUpdateMode = 1 << 10,
+    Terminated             = 1 << 11,
+    modelError             = 1 << 12,
+    modelFatal             = 1 << 13,
 } ModelState;
 
 #endif
 
 typedef enum {
     ModelExchange,
-    BasicCoSimulation,
-    HybridCoSimulation,
-    ScheduledCoSimulation,
+    CoSimulation,
+    ScheduledExecution,
 } InterfaceType;
 
 typedef enum {
@@ -65,40 +83,38 @@ typedef enum {
 } Status;
 
 #if FMI_VERSION < 3
-typedef void  (*loggerType)         (void *componentEnvironment, const char *instanceName, int status, const char *category, const char *message, ...);
-typedef void* (*allocateMemoryType) (size_t nobj, size_t size);
-typedef void  (*freeMemoryType)     (void *obj);
+typedef void (*loggerType) (void *componentEnvironment, const char *instanceName, int status, const char *category, const char *message, ...);
 #else
-typedef void  (*loggerType)          (void *componentEnvironment, const char *instanceName, int status, const char *category, const char *message);
-typedef void* (*allocateMemoryType)  (void *componentEnvironment, size_t nobj, size_t size);
-typedef void  (*freeMemoryType)      (void *componentEnvironment, void *obj);
+typedef void (*loggerType) (void *componentEnvironment, const char *instanceName, int status, const char *category, const char *message);
 #endif
 
-typedef void  (*lockPreemptionType)   ();
-typedef void  (*unlockPreemptionType) ();
+typedef void (*lockPreemptionType)   ();
+typedef void (*unlockPreemptionType) ();
 
-typedef Status (*intermediateUpdateType) (void *instanceEnvironment,
-                                          double intermediateUpdateTime,
-                                          int eventOccurred,
-                                          int clocksTicked,
-                                          int intermediateVariableSetAllowed,
-                                          int intermediateVariableGetAllowed,
-                                          int intermediateStepFinished,
-                                          int canReturnEarly);
-                                                      
+typedef void (*intermediateUpdateType) (void *instanceEnvironment,
+                                        double intermediateUpdateTime,
+                                        int eventOccurred,
+                                        int clocksTicked,
+                                        int intermediateVariableSetAllowed,
+                                        int intermediateVariableGetAllowed,
+                                        int intermediateStepFinished,
+                                        int canReturnEarly,
+                                        int *earlyReturnRequested,
+                                        double *earlyReturnTime);
+
 typedef struct {
-    
+
     double time;
     const char *instanceName;
     InterfaceType type;
     const char *resourceLocation;
 
+    Status status;
+
     // callback functions
     loggerType logger;
-    allocateMemoryType allocateMemory;
-    freeMemoryType freeMemory;
     intermediateUpdateType intermediateUpdate;
-    
+
     lockPreemptionType lockPreemtion;
     unlockPreemptionType unlockPreemtion;
 
@@ -107,7 +123,7 @@ typedef struct {
 
     void *componentEnvironment;
     ModelState state;
-    
+
     // event info
     bool newDiscreteStatesNeeded;
     bool terminateSimulation;
@@ -116,32 +132,30 @@ typedef struct {
     bool nextEventTimeDefined;
     double nextEventTime;
     bool clocksTicked;
-    
+
     bool isDirtyValues;
     bool isNewEventIteration;
-    
+
     ModelData *modelData;
 
     // event indicators
     double *z;
     double *prez;
-    
+
     // internal solver steps
     int nSteps;
-    
-    // hybrid co-simulation
+
+    // co-simulation
     bool returnEarly;
-    
+
 } ModelInstance;
 
 ModelInstance *createModelInstance(
     loggerType logger,
-    allocateMemoryType allocateMemory,
-    freeMemoryType freeMemory,
     intermediateUpdateType intermediateUpdate,
     void *componentEnvironment,
     const char *instanceName,
-    const char *GUID,
+    const char *instantiationToken,
     const char *resourceLocation,
     bool loggingOn,
     InterfaceType interfaceType,
@@ -150,7 +164,7 @@ void freeModelInstance(ModelInstance *comp);
 
 void setStartValues(ModelInstance *comp);
 void calculateValues(ModelInstance *comp);
-    
+
 Status getFloat64 (ModelInstance* comp, ValueReference vr, double      *value, size_t *index);
 Status getInt32   (ModelInstance* comp, ValueReference vr, int32_t     *value, size_t *index);
 Status getUInt16  (ModelInstance* comp, ValueReference vr, uint16_t    *value, size_t *index);
@@ -178,9 +192,6 @@ void getEventIndicators(ModelInstance *comp, double z[], size_t nz);
 void eventUpdate(ModelInstance *comp);
 //void updateEventTime(ModelInstance *comp);
 
-void *allocateMemory(ModelInstance *comp, size_t num, size_t size);
-void freeMemory(ModelInstance *comp, void *obj);
-const char *duplicateString(ModelInstance *comp, const char *str1);
 bool invalidNumber(ModelInstance *comp, const char *f, const char *arg, size_t actual, size_t expected);
 bool invalidState(ModelInstance *comp, const char *f, int statesExpected);
 bool nullPointer(ModelInstance* comp, const char *f, const char *arg, const void *p);
@@ -196,22 +207,22 @@ void logError(ModelInstance *comp, const char *message, ...);
 size_t index = 0; \
 Status status = OK; \
 for (int i = 0; i < nvr; i++) { \
-    Status s = get ## T(comp, vr[i], value, &index); \
+    Status s = get ## T((ModelInstance *)instance, vr[i], value, &index); \
     status = max(status, s); \
-    if (status > Warning) return status; \
+    if (status > Warning) return (FMI_STATUS)status; \
 } \
-return status;
+return (FMI_STATUS)status;
 
 #define SET_VARIABLES(T) \
 size_t index = 0; \
 Status status = OK; \
 for (int i = 0; i < nvr; i++) { \
-    Status s = set ## T(comp, vr[i], value, &index); \
+    Status s = set ## T((ModelInstance *)instance, vr[i], value, &index); \
     status = max(status, s); \
-    if (status > Warning) return status; \
+    if (status > Warning) return (FMI_STATUS)status; \
 } \
-if (nvr > 0) comp->isDirtyValues = true; \
-return status;
+if (nvr > 0) ((ModelInstance *)instance)->isDirtyValues = true; \
+return (FMI_STATUS)status;
 
 // TODO: make this work with arrays
 #define GET_BOOLEAN_VARIABLES \
@@ -219,12 +230,12 @@ Status status = OK; \
 for (int i = 0; i < nvr; i++) { \
     bool v = false; \
     size_t index = 0; \
-    Status s = getBoolean(comp, vr[i], &v, &index); \
+    Status s = getBoolean((ModelInstance *)instance, vr[i], &v, &index); \
     value[i] = v; \
     status = max(status, s); \
-    if (status > Warning) return status; \
+    if (status > Warning) return (FMI_STATUS)status; \
 } \
-return status;
+return (FMI_STATUS)status;
 
 // TODO: make this work with arrays
 #define SET_BOOLEAN_VARIABLES \
@@ -232,10 +243,10 @@ Status status = OK; \
 for (int i = 0; i < nvr; i++) { \
     bool v = value[i]; \
     size_t index = 0; \
-    Status s = setBoolean(comp, vr[i], &v, &index); \
+    Status s = setBoolean((ModelInstance *)instance, vr[i], &v, &index); \
     status = max(status, s); \
-    if (status > Warning) return status; \
+    if (status > Warning) return (FMI_STATUS)status; \
 } \
-return status;
+return (FMI_STATUS)status;
 
 #endif  /* model_h */

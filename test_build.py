@@ -7,7 +7,7 @@ from fmpy.util import compile_platform_binary
 
 
 fmus_dir = os.path.join(os.path.dirname(__file__), 'fmus')  # /path/to/fmi-cross-check/fmus
-test_fmus_version = '0.0.2'
+test_fmus_version = '0.0.4'
 
 test_fmus_dir = os.path.dirname(__file__)
 
@@ -75,7 +75,8 @@ class BuildTest(unittest.TestCase):
                 result = simulate_fmu(fmu_filename,
                                       fmi_type=fmi_type,
                                       start_values=start_values,
-                                      input=input)
+                                      input=input,
+                                      solver='Euler')
 
                 dev = validate_result(result, ref)
 
@@ -145,20 +146,32 @@ class BuildTest(unittest.TestCase):
         subprocess.call(['cmake', '--build', '.', '--config', 'Release'], cwd=build_dir)
 
         # run examples
-        for example in ['co_simulation', #'cs_clocked',
-            'cs_early_return', 'scs_synchronous', 'jacobian']:
+        examples = [
+            'import_shared_library',
+            'import_static_library',
+            'co_simulation',
+            'bcs_early_return',
+            'bcs_intermediate_update',
+            'jacobian',
+            'scs_synchronous'
+        ]
+
+        is_windows = os.name == 'nt'
+
+        if is_windows:
+            examples.append('scs_threaded')  # runs only on Windows
+
+        for example in examples:
             print("Running %s example..." % example)
-            if os.name == 'nt':
-                filename = os.path.join(build_dir, 'Release', example + '.exe')
-            else:
-                filename = os.path.join(build_dir, example)
-            subprocess.check_call(filename)
+            filename = os.path.join(build_dir, 'temp', example)
+            subprocess.check_call(filename, cwd=os.path.join(build_dir, 'temp'))
 
         models = ['BouncingBall', 'Dahlquist', 'Feedthrough', 'Resource', 'Stair', 'VanDerPol']
         self.validate(build_dir, models=models)
         self.validate(build_dir, models=models, compile=True)
 
         copy_to_cross_check(build_dir=build_dir, model_names=models, fmi_version='3.0', fmi_types=['cs', 'me'])
+        copy_to_cross_check(build_dir=build_dir, model_names=['Clocks'], fmi_version='3.0', fmi_types=['se'])
 
 
 if __name__ == '__main__':

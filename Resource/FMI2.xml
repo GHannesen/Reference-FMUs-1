@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="ISO-8859-1"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <fmiModelDescription
   fmiVersion="2.0"
   modelName="Resource"
@@ -6,13 +6,22 @@
   guid="{7b9c2114-2ce5-4076-a138-2cbc69e069e5}"
   numberOfEventIndicators="0">
 
-  <ModelExchange modelIdentifier="Resource">
+  <ModelExchange
+    modelIdentifier="Resource"
+    canNotUseMemoryManagementFunctions="true"
+    canGetAndSetFMUstate="true"
+    canSerializeFMUstate="true">
     <SourceFiles>
       <File name="all.c"/>
     </SourceFiles>
   </ModelExchange>
 
-  <CoSimulation modelIdentifier="Resource" canHandleVariableCommunicationStepSize="true">
+  <CoSimulation
+    modelIdentifier="Resource"
+    canHandleVariableCommunicationStepSize="true"
+    canNotUseMemoryManagementFunctions="true"
+    canGetAndSetFMUstate="true"
+    canSerializeFMUstate="true">
     <SourceFiles>
       <File name="all.c"/>
     </SourceFiles>
@@ -26,8 +35,8 @@
   <DefaultExperiment startTime="0" stopTime="1"/>
 
   <ModelVariables>
-    <ScalarVariable name="y" valueReference="0" description="Value of the first character in resources/y.txt" causality="output" variability="continuous">
-      <Real start="0"/>
+    <ScalarVariable name="y" valueReference="0" description="Value of the first character in resources/y.txt" causality="output" variability="discrete">
+      <Integer/>
     </ScalarVariable>
   </ModelVariables>
 
@@ -35,6 +44,9 @@
     <Outputs>
       <Unknown index="1"/>
     </Outputs>
+    <InitialUnknowns>
+      <Unknown index="1"/>
+    </InitialUnknowns>
   </ModelStructure>
 
 </fmiModelDescription>

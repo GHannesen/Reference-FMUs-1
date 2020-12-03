@@ -5,13 +5,14 @@
  *  in the project root for license information.              *
  **************************************************************/
 
-#include <float.h>  // for DBL_EPSILON
-#include <math.h>   // for fabs()
+#include <stdlib.h>  // for calloc(), free()
+#include <float.h>   // for DBL_EPSILON
+#include <math.h>    // for fabs()
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
 #include "config.h"
-#include "slave.h"
+#include "cosimulation.h"
 
 #if FMI_VERSION == 3
 #include "fmi3Functions.h"
@@ -20,12 +21,10 @@
 
 ModelInstance *createModelInstance(
     loggerType cbLogger,
-    allocateMemoryType cbAllocateMemory,
-    freeMemoryType cbFreeMemory,
     intermediateUpdateType intermediateUpdate,
     void *componentEnvironment,
     const char *instanceName,
-    const char *GUID,
+    const char *instantiationToken,
     const char *resourceLocation,
     bool loggingOn,
     InterfaceType interfaceType,
@@ -37,58 +36,49 @@ ModelInstance *createModelInstance(
         return NULL;
     }
 
-    if (!cbAllocateMemory || !cbFreeMemory) {
-        cbLogger(componentEnvironment, instanceName, Error, "error", "Missing callback function.");
-        return NULL;
-    }
-
     if (!instanceName || strlen(instanceName) == 0) {
         cbLogger(componentEnvironment, "?", Error, "error", "Missing instance name.");
         return NULL;
     }
 
-    if (!GUID || strlen(GUID) == 0) {
+    if (!instantiationToken || strlen(instantiationToken) == 0) {
         cbLogger(componentEnvironment, instanceName, Error, "error", "Missing GUID.");
         return NULL;
     }
 
-    if (strcmp(GUID, MODEL_GUID)) {
+    if (strcmp(instantiationToken, INSTANTIATION_TOKEN)) {
         cbLogger(componentEnvironment, instanceName, Error, "error", "Wrong GUID.");
         return NULL;
     }
 
-#if FMI_VERSION < 3
-    comp = (ModelInstance *)cbAllocateMemory(1, sizeof(ModelInstance));
-#else
-    comp = (ModelInstance *)cbAllocateMemory(componentEnvironment, 1, sizeof(ModelInstance));
-#endif
+    comp = (ModelInstance *)calloc(1, sizeof(ModelInstance));
 
     if (comp) {
 
         // set the callbacks
         comp->componentEnvironment = componentEnvironment;
         comp->logger = cbLogger;
-        comp->allocateMemory = cbAllocateMemory;
-        comp->freeMemory = cbFreeMemory;
         comp->intermediateUpdate = intermediateUpdate;
         comp->lockPreemtion = NULL;
         comp->unlockPreemtion = NULL;
 
-        comp->instanceName = (char *)allocateMemory(comp, 1 + strlen(instanceName), sizeof(char));
+        comp->instanceName = (char *)calloc(1 + strlen(instanceName), sizeof(char));
 
         // resourceLocation is NULL for FMI 1.0 ME
         if (resourceLocation) {
-            comp->resourceLocation = (char *)allocateMemory(comp, 1 + strlen(resourceLocation), sizeof(char));
+            comp->resourceLocation = (char *)calloc(1 + strlen(resourceLocation), sizeof(char));
             strcpy((char *)comp->resourceLocation, (char *)resourceLocation);
         } else {
             comp->resourceLocation = NULL;
         }
 
-        comp->modelData = (ModelData *)allocateMemory(comp, 1, sizeof(ModelData));
+        comp->status = OK;
+
+        comp->modelData = (ModelData *)calloc(1, sizeof(ModelData));
 
         comp->logEvents = loggingOn;
         comp->logErrors = true; // always log errors
-        
+
         comp->nSteps = 0;
 
         comp->returnEarly = false;
@@ -103,7 +93,7 @@ ModelInstance *createModelInstance(
     strcpy((char *)comp->instanceName, (char *)instanceName);
     comp->type = interfaceType;
 
-    comp->state = modelInstantiated;
+    comp->state = Instantiated;
     comp->isNewEventIteration = false;
 
     comp->newDiscreteStatesNeeded = false;
@@ -116,11 +106,11 @@ ModelInstance *createModelInstance(
     setStartValues(comp); // to be implemented by the includer of this file
     comp->isDirtyValues = true; // because we just called setStartValues
 
-#if NUMBER_OF_EVENT_INDICATORS > 0
-    comp->z = allocateMemory(comp, sizeof(double), NUMBER_OF_EVENT_INDICATORS);
-    comp->prez = allocateMemory(comp, sizeof(double), NUMBER_OF_EVENT_INDICATORS);
+#if NZ > 0
+    comp->z    = calloc(sizeof(double), NZ);
+    comp->prez = calloc(sizeof(double), NZ);
 #else
-    comp->z = NULL;
+    comp->z    = NULL;
     comp->prez = NULL;
 #endif
 
@@ -128,33 +118,10 @@ ModelInstance *createModelInstance(
 }
 
 void freeModelInstance(ModelInstance *comp) {
-    freeMemory(comp, (void *)comp->instanceName);
-    freeMemory(comp, (void *)comp->z);
-    freeMemory(comp, (void *)comp->prez);
-    freeMemory(comp, comp);
-}
-
-void *allocateMemory(ModelInstance *comp, size_t num, size_t size) {
-#if FMI_VERSION > 2
-    return comp->allocateMemory(comp->componentEnvironment, num, size);
-#else
-    return comp->allocateMemory(num, size);
-#endif
-}
-
-void freeMemory(ModelInstance *comp, void *obj) {
-#if FMI_VERSION > 2
-    comp->freeMemory(comp->componentEnvironment, obj);
-#else
-    comp->freeMemory(obj);
-#endif
-}
-
-const char *duplicateString(ModelInstance *comp, const char *str1) {
-    size_t len = strlen(str1);
-    char *str2 = allocateMemory(comp, len + 1, sizeof(char));
-    strncpy(str2, str1, len + 1);
-    return str2;
+    free((void *)comp->instanceName);
+    free(comp->z);
+    free(comp->prez);
+    free(comp);
 }
 
 bool invalidNumber(ModelInstance *comp, const char *f, const char *arg, size_t actual, size_t expected) {
@@ -233,14 +200,14 @@ static void logMessage(ModelInstance *comp, int status, const char *category, co
     va_end(args1);
 
     va_copy(args1, args);
-    buf = allocateMemory(comp, len + 1, sizeof(char));
+    buf = (char *)calloc(len + 1, sizeof(char));
     vsnprintf(buf, len + 1, message, args);
     va_end(args1);
 
     // no need to distinguish between FMI versions since we're not using variadic arguments
     comp->logger(comp->componentEnvironment, comp->instanceName, status, category, buf);
 
-    freeMemory(comp, buf);
+    free(buf);
 }
 
 void logEvent(ModelInstance *comp, const char *message, ...) {
@@ -264,7 +231,7 @@ void logError(ModelInstance *comp, const char *message, ...) {
 }
 
 // default implementations
-#if NUMBER_OF_EVENT_INDICATORS < 1
+#if NZ < 1
 void getEventIndicators(ModelInstance *comp, double z[], size_t nz) {
     UNUSED(comp)
     UNUSED(z)
@@ -421,7 +388,7 @@ Status activateModelPartition(ModelInstance* comp, ValueReference vr, double act
 }
 #endif
 
-#if NUMBER_OF_STATES < 1
+#if NX < 1
 void getContinuousStates(ModelInstance *comp, double x[], size_t nx) {
     UNUSED(comp)
     UNUSED(x)
@@ -451,44 +418,45 @@ Status getPartialDerivative(ModelInstance *comp, ValueReference unknown, ValueRe
 }
 #endif
 
-Status doStep(ModelInstance *comp, double t, double tNext, int* earlyReturn) {
+Status doStep(ModelInstance *comp, double t, double tNext, int* earlyReturn, double* lastSuccessfulTime) {
 
     UNUSED(t)  // TODO: check t == comp->time ?
 
     bool stateEvent, timeEvent;
+    Status status = OK;
 
-#if NUMBER_OF_EVENT_INDICATORS > 0
+#if NZ > 0
     double *temp = NULL;
 #endif
 
-#if NUMBER_OF_STATES > 0
-    double  x[NUMBER_OF_STATES] = { 0 };
-    double dx[NUMBER_OF_STATES] = { 0 };
+#if NX > 0
+    double  x[NX] = { 0 };
+    double dx[NX] = { 0 };
 #endif
 
     double epsilon = (1.0 + fabs(comp->time)) * DBL_EPSILON;
-    
+
     while (comp->time + FIXED_SOLVER_STEP < tNext + epsilon) {
 
-#if NUMBER_OF_STATES > 0
-        getContinuousStates(comp, x, NUMBER_OF_STATES);
-        getDerivatives(comp, dx, NUMBER_OF_STATES);
+#if NX > 0
+        getContinuousStates(comp, x, NX);
+        getDerivatives(comp, dx, NX);
 
         // forward Euler step
-        for (int i = 0; i < NUMBER_OF_STATES; i++) {
+        for (int i = 0; i < NX; i++) {
             x[i] += FIXED_SOLVER_STEP * dx[i];
         }
 
-        setContinuousStates(comp, x, NUMBER_OF_STATES);
+        setContinuousStates(comp, x, NX);
 #endif
 
         stateEvent = false;
 
-#if NUMBER_OF_EVENT_INDICATORS > 0
-        getEventIndicators(comp, comp->z, NUMBER_OF_EVENT_INDICATORS);
+#if NZ > 0
+        getEventIndicators(comp, comp->z, NZ);
 
         // check for zero-crossings
-        for (int i = 0; i < NUMBER_OF_EVENT_INDICATORS; i++) {
+        for (int i = 0; i < NZ; i++) {
             stateEvent |= comp->prez[i] < 0 && comp->z[i] >= 0;
             stateEvent |= comp->prez[i] > 0 && comp->z[i] <= 0;
         }
@@ -512,21 +480,36 @@ Status doStep(ModelInstance *comp, double t, double tNext, int* earlyReturn) {
 
             comp->returnEarly = comp->nextEventTime < t + tNext;
 
-#if NUMBER_OF_EVENT_INDICATORS > 0
+#if NZ > 0
             // update previous event indicators
-            getEventIndicators(comp, comp->prez, NUMBER_OF_EVENT_INDICATORS);
+            getEventIndicators(comp, comp->prez, NZ);
 #endif
 
 #if FMI_VERSION == 3
-            if (comp->intermediateUpdate) { // Hybrid Co-Simulation
+            if (comp->intermediateUpdate) {
 
-                // call intermediate update callback
+                comp->state = IntermediateUpdateMode;
+
+                int earlyReturnRequested;
+                double earlyReturnTime;
+
                 comp->intermediateUpdate((fmi3InstanceEnvironment)comp->componentEnvironment,
-                                         comp->time, 1, comp->clocksTicked, 0, 0, 0, 1);
+                                          comp->time,         // intermediateUpdateTime
+                                          1,                  // eventOccurred
+                                          comp->clocksTicked, // clocksTicked
+                                          0,                  // intermediateVariableSetAllowed
+                                          1,                  // intermediateVariableGetAllowed
+                                          0,                  // intermediateStepFinished
+                                          1,                  // canReturnEarly
+                                          &earlyReturnRequested,
+                                          &earlyReturnTime);
 
-                if (comp->returnEarly) {
+                comp->state = StepMode;
+
+                if (earlyReturnRequested) {
                     *earlyReturn = 1;
-                    return OK;
+                    // TODO: continue to earlyReturnTime?
+                    return status;
                 }
             }
 #endif
@@ -534,18 +517,46 @@ Status doStep(ModelInstance *comp, double t, double tNext, int* earlyReturn) {
 
         // terminate simulation, if requested by the model in the previous step
         if (comp->terminateSimulation) {
-#if FMI_VERSION > 1
-            comp->state = modelStepFailed;
+#if FMI_VERSION == 2
+            comp->state = StepFailed;
 #endif
             return Discard; // enforce termination of the simulation loop
         }
 
         comp->time = FIXED_SOLVER_STEP * (++comp->nSteps);
+
+#if FMI_VERSION == 3
+        if (comp->intermediateUpdate) {
+
+            comp->state = IntermediateUpdateMode;
+
+            int earlyReturnRequested;
+            double earlyReturnTime;
+
+            // call intermediate update callback
+            comp->intermediateUpdate((fmi3InstanceEnvironment)comp->componentEnvironment,
+                                      comp->time, // intermediateUpdateTime
+                                      0,          // eventOccurred
+                                      0,          // clocksTicked
+                                      0,          // intermediateVariableSetAllowed
+                                      1,          // intermediateVariableGetAllowed
+                                      1,          // intermediateStepFinished
+                                      1,          // canReturnEarly
+                                      &earlyReturnRequested,
+                                      &earlyReturnTime);
+
+            comp->state = StepMode;
+        }
+#endif
     }
 
     if (earlyReturn) {
         *earlyReturn = 0;
     }
 
-    return OK;
+    if (lastSuccessfulTime) {
+        *lastSuccessfulTime = comp->time;
+    }
+
+    return status;
 }

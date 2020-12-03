@@ -1,18 +1,19 @@
-<?xml version="1.0" encoding="ISO-8859-1"?>
-<fmiModelDescription fmiVersion="3.0-alpha.3" modelName="van der Pol oscillator" instantiationToken="{8c4e810f-3da3-4a00-8276-176fa3c9f000}">
+<?xml version="1.0" encoding="UTF-8"?>
+<fmiModelDescription fmiVersion="3.0-alpha.5" modelName="van der Pol oscillator" instantiationToken="{8c4e810f-3da3-4a00-8276-176fa3c9f000}">
 
-  <ModelExchange modelIdentifier="VanDerPol"/>
+  <ModelExchange
+    modelIdentifier="VanDerPol"
+    canGetAndSetFMUState="true"
+    canSerializeFMUState="true"/>
 
-  <BasicCoSimulation modelIdentifier="VanDerPol" canHandleVariableCommunicationStepSize="true"/>
-
-  <BuildConfiguration modelIdentifier="VanDerPol">
-    <SourceFileSet language="C99">
-      <SourceFile name="fmi3Functions.c"/>
-      <SourceFile name="model.c"/>
-      <SourceFile name="slave.c"/>
-      <PreprocessorDefinition name="FMI_VERSION" value="3"/>
-    </SourceFileSet>
-  </BuildConfiguration>
+  <CoSimulation
+    modelIdentifier="VanDerPol"
+    canGetAndSetFMUState="true"
+    canSerializeFMUState="true"
+    canHandleVariableCommunicationStepSize="true"
+    providesIntermediateVariableAccess="true"
+    canReturnEarlyAfterIntermediateUpdate="true"
+    fixedInternalStepSize="1e-2"/>
 
   <LogCategories>
     <Category name="logEvents" description="Log events"/>

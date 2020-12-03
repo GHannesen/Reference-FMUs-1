@@ -1,18 +1,19 @@
-<?xml version="1.0" encoding="ISO-8859-1"?>
-<fmiModelDescription fmiVersion="3.0-alpha.3" modelName="Feedthrough" instantiationToken="{8c4e810f-3df3-4a00-8276-176fa3c9f004}">
+<?xml version="1.0" encoding="UTF-8"?>
+<fmiModelDescription fmiVersion="3.0-alpha.5" modelName="Feedthrough" instantiationToken="{8c4e810f-3df3-4a00-8276-176fa3c9f004}">
 
-  <ModelExchange modelIdentifier="Feedthrough"/>
+  <ModelExchange
+    modelIdentifier="Feedthrough"
+    canGetAndSetFMUState="true"
+    canSerializeFMUState="true"/>
 
-  <BasicCoSimulation modelIdentifier="Feedthrough" canHandleVariableCommunicationStepSize="true"/>
-
-  <BuildConfiguration modelIdentifier="Feedthrough">
-    <SourceFileSet language="C99">
-      <SourceFile name="fmi3Functions.c"/>
-      <SourceFile name="model.c"/>
-      <SourceFile name="slave.c"/>
-      <PreprocessorDefinition name="FMI_VERSION" value="3"/>
-    </SourceFileSet>
-  </BuildConfiguration>
+  <CoSimulation
+    modelIdentifier="Feedthrough"
+    canGetAndSetFMUState="true"
+    canSerializeFMUState="true"
+    canHandleVariableCommunicationStepSize="true"
+    providesIntermediateVariableAccess="true"
+    canReturnEarlyAfterIntermediateUpdate="true"
+    fixedInternalStepSize="1"/>
 
   <LogCategories>
     <Category name="logEvents" description="Log events"/>
@@ -45,6 +46,7 @@
     <Output valueReference="7"/>
     <Output valueReference="9"/>
     <Output valueReference="12"/>
+    <InitialUnknown valueReference="3"/>
   </ModelStructure>
 
 </fmiModelDescription>
